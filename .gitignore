@@ -1,3 +1,19 @@
+# ==================== PROYECTO ====================
+# Perfil del navegador Edge (binarios pesados, sesiones personales)
+edge_profile/
+
+# Datos de alumnos y sesión (privacidad)
+alumnos_notas.csv
+session_cookies.json
+
+# Archivos de debug generados por el script
+debug_*.html
+debug_*.json
+
+# Configuración local de Claude Code
+.claude/
+
+# ==================== PYTHON ====================
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

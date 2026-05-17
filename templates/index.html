@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Notas - DaVinci</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+    <h1>Gestor de Notas</h1>
+    <p>Plataforma DaVinci</p>
+</header>
+
+<main>
+
+    <div class="panel" id="panelNavegador">
+        <div class="panel-head">
+            <h2>Navegador: <span id="estadoNavegador">cerrado</span></h2>
+            <div class="right">
+                <button class="btn btn-dark btn-sm" id="btnAbrir" onclick="abrirNavegador()">Abrir navegador</button>
+                <button class="btn btn-ghost btn-sm" id="btnCerrar" onclick="cerrarNavegador()" disabled>Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel" id="panelMaterias" style="display:none">
+        <div class="panel-head">
+            <h2>Materia: <span id="materiaActiva">ninguna seleccionada</span></h2>
+            <div class="right">
+                <button class="btn btn-ghost btn-sm" id="btnCargarMaterias" onclick="cargarMaterias()">Cargar materias</button>
+            </div>
+        </div>
+        <ul id="listaMaterias" style="display:none;padding:0.75rem 1.5rem;list-style:none;"></ul>
+    </div>
+
+    <div id="status" class="status">
+        <div id="spinner" class="spinner"></div>
+        <span id="statusMsg"></span>
+    </div>
+
+    <div class="actions">
+        <div class="card">
+            <h2>Extraer alumnos</h2>
+            <p>Descarga la lista completa de alumnos desde la plataforma.</p>
+            <button class="btn btn-dark" id="btnExtraer" onclick="extraer()">Extraer alumnos</button>
+        </div>
+        <div class="card">
+            <h2>Extraer alumnos con notas</h2>
+            <p>Extrae alumnos y completa automáticamente Nota 1, Nota 2 y Condición.</p>
+            <button class="btn btn-dark" id="btnExtraerConNotas" onclick="extraerConNotas()">Extraer alumnos con notas</button>
+            <small style="display:block;margin-top:0.4rem;opacity:0.6">(si existen evaluaciones)</small>
+        </div>
+        <div class="card">
+            <h2>Cargar notas</h2>
+            <p>Sube las notas de la tabla a la evaluación elegida.</p>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem">
+                <button class="btn btn-green" id="btnCargar1" onclick="cargar(1)">1ra Evaluación</button>
+                <button class="btn btn-green" id="btnCargar2" onclick="cargar(2)">2da Evaluación</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel panel-green" id="panelGuardarExcel" style="display:none">
+        <div class="panel-head">
+            <h2>Guardar desde Excel</h2>
+            <div class="right">
+                <button class="btn btn-green btn-sm" id="btnGuardarExcel1" onclick="cargar(1)">1ra Evaluación</button>
+                <button class="btn btn-green btn-sm" id="btnGuardarExcel2" onclick="cargar(2)">2da Evaluación</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head">
+            <h2>
+                Alumnos
+                {% if alumnos %}
+                <span class="badge">{{ alumnos|length }}</span>
+                {% endif %}
+            </h2>
+            {% if alumnos %}
+            <div class="right">
+                <button class="btn btn-ghost btn-sm" onclick="guardarNotas()">Guardar notas</button>
+                <a class="btn btn-ghost btn-sm" href="/descargar_excel">Descargar Excel</a>
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+                    Importar Excel
+                    <input type="file" accept=".xlsx,.csv" style="display:none" onchange="importarExcel(this)">
+                </label>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if alumnos %}
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:3rem">#</th>
+                    <th>Nombre</th>
+                    <th style="width:7rem">Nota 1</th>
+                    <th style="width:7rem">Nota 2</th>
+                    <th style="width:11rem">Condición</th>
+                    <th style="width:10rem">Nota (0 – 10)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in alumnos %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ a.Nombre }}</td>
+                    <td>{{ a.Nota1 }}</td>
+                    <td>{{ a.Nota2 }}</td>
+                    <td>{{ a.Condicion }}</td>
+                    <td>
+                        <input class="nota-input" type="number"
+                               min="0" max="10" step="1"
+                               value="{{ a.Nota if a.Nota else '' }}"
+                               data-nombre="{{ a.Nombre }}"
+                               data-nota1="{{ a.Nota1 }}"
+                               data-nota2="{{ a.Nota2 }}"
+                               data-condicion="{{ a.Condicion }}"
+                               placeholder="—">
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">
+            <strong>Sin alumnos todavía</strong>
+            <span>Haz clic en <b>Extraer alumnos</b> para descargar la lista desde la plataforma.</span>
+        </div>
+        {% endif %}
+    </div>
+
+</main>
+
+<script>
+let polling = null;
+let navegadorAbierto = false;
+
+function setOcupado(v) {
+    const ocupado = v || !navegadorAbierto;
+    document.getElementById("btnExtraer").disabled          = ocupado;
+    document.getElementById("btnExtraerConNotas").disabled  = ocupado;
+    document.getElementById("btnCargar1").disabled          = ocupado;
+    document.getElementById("btnCargar2").disabled          = ocupado;
+    document.getElementById("btnCargarMaterias").disabled   = v;
+    const ge1 = document.getElementById("btnGuardarExcel1");
+    const ge2 = document.getElementById("btnGuardarExcel2");
+    if (ge1) ge1.disabled = ocupado;
+    if (ge2) ge2.disabled = ocupado;
+}
+
+function actualizarEstadoNavegador(abierto) {
+    navegadorAbierto = abierto;
+    const label  = document.getElementById("estadoNavegador");
+    const btnA   = document.getElementById("btnAbrir");
+    const btnC   = document.getElementById("btnCerrar");
+    const panel  = document.getElementById("panelMaterias");
+    const actions = document.querySelector(".actions");
+
+    label.textContent = abierto ? "abierto" : "cerrado";
+    btnA.disabled = abierto;
+    btnC.disabled = !abierto;
+    panel.style.display   = abierto ? "" : "none";
+    if (actions) actions.style.display = abierto ? "" : "none";
+
+    setOcupado(false);
+}
+
+async function abrirNavegador() {
+    document.getElementById("btnAbrir").disabled = true;
+    const data = await fetch("/abrir", { method: "POST" }).then(r => r.json());
+    if (data.error) { showStatus("error", data.error, false); document.getElementById("btnAbrir").disabled = false; return; }
+    showStatus("info", "Iniciando navegador...", true);
+
+    const iv = setInterval(async () => {
+        const est = await fetch("/status").then(r => r.json());
+        if (!est.ocupado) {
+            clearInterval(iv);
+            if (est.error) {
+                showStatus("error", "Error: " + est.error, false);
+                actualizarEstadoNavegador(false);
+            } else {
+                showStatus("ok", est.mensaje, false);
+                actualizarEstadoNavegador(est.navegador_abierto);
+            }
+        } else {
+            showStatus("info", est.mensaje || "Procesando...", true);
+        }
+    }, 1000);
+}
+
+async function cerrarNavegador() {
+    const data = await fetch("/cerrar", { method: "POST" }).then(r => r.json());
+    if (data.error) { showStatus("error", data.error, false); return; }
+    actualizarEstadoNavegador(false);
+    showStatus("ok", "Navegador cerrado", false);
+}
+
+// Al cargar la página, sincronizar estado real del navegador
+fetch("/status").then(r => r.json()).then(est => {
+    actualizarEstadoNavegador(est.navegador_abierto);
+    if (est.materias && est.materias.length) renderMaterias(est.materias);
+    if (est.materia_activa) document.getElementById("materiaActiva").textContent = est.materia_activa.nombre;
+});
+
+function showStatus(tipo, msg, spinner) {
+    const el = document.getElementById("status");
+    el.className = "status show " + tipo;
+    document.getElementById("statusMsg").textContent = msg;
+    document.getElementById("spinner").style.display = spinner ? "" : "none";
+}
+
+function startPolling() {
+    if (polling) return;
+    polling = setInterval(async () => {
+        const est = await fetch("/status").then(r => r.json());
+        actualizarEstadoNavegador(est.navegador_abierto);
+        if (est.ocupado) {
+            showStatus("info", est.mensaje || "Procesando...", true);
+        } else {
+            clearInterval(polling); polling = null;
+            setOcupado(false);
+            if (est.error) {
+                showStatus("error", "Error: " + est.error, false);
+            } else if (est.mensaje) {
+                showStatus("ok", est.mensaje, false);
+                setTimeout(() => location.reload(), 1800);
+            }
+        }
+    }, 1000);
+}
+
+async function cargarMaterias() {
+    document.getElementById("btnCargarMaterias").disabled = true;
+    const data = await fetch("/cargar_materias", { method: "POST" }).then(r => r.json());
+    if (data.error) { showStatus("error", data.error, false); document.getElementById("btnCargarMaterias").disabled = false; return; }
+    setOcupado(true);
+    showStatus("info", "Cargando materias...", true);
+
+    const interval = setInterval(async () => {
+        const est = await fetch("/status").then(r => r.json());
+        if (!est.ocupado) {
+            clearInterval(interval);
+            setOcupado(false);
+            document.getElementById("btnCargarMaterias").disabled = false;
+            if (est.error) { showStatus("error", "Error: " + est.error, false); return; }
+            showStatus("ok", est.mensaje, false);
+            renderMaterias(est.materias || []);
+        }
+    }, 1000);
+}
+
+function renderMaterias(materias) {
+    const lista = document.getElementById("listaMaterias");
+    lista.style.display = "";
+    if (!materias.length) {
+        lista.innerHTML = "<li>No se encontraron materias.</li>";
+        return;
+    }
+    lista.innerHTML = materias.map(m =>
+        `<li style="margin-bottom:0.4rem">
+            <button class="btn btn-ghost btn-sm" onclick='seleccionar(${JSON.stringify(m)})'>
+                ${m.nombre}
+            </button>
+        </li>`
+    ).join("");
+}
+
+async function seleccionar(materia) {
+    const data = await fetch("/seleccionar_materia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(materia)
+    }).then(r => r.json());
+    if (data.ok) {
+        document.getElementById("materiaActiva").textContent = materia.nombre;
+        showStatus("ok", `Materia seleccionada: ${materia.nombre}`, false);
+    }
+}
+
+async function extraer() {
+    const data = await fetch("/extraer", { method: "POST" }).then(r => r.json());
+    if (data.error) { showStatus("error", data.error, false); return; }
+    setOcupado(true);
+    showStatus("info", "Iniciando...", true);
+    startPolling();
+}
+
+async function extraerConNotas() {
+    const res  = await fetch("/extraer_con_notas", { method: "POST" });
+    const data = await res.json().catch(() => ({ error: `HTTP ${res.status} — reiniciá la app` }));
+    if (data.error) { showStatus("error", data.error, false); return; }
+    setOcupado(true);
+    showStatus("info", "Iniciando...", true);
+    startPolling();
+}
+
+async function guardarNotas() {
+    const notas = [...document.querySelectorAll(".nota-input")].map(i => ({
+        Nombre:    i.dataset.nombre,
+        Nota1:     i.dataset.nota1     || '',
+        Nota2:     i.dataset.nota2     || '',
+        Condicion: i.dataset.condicion || '',
+        Nota:      i.value
+    }));
+    const data = await fetch("/guardar_notas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notas })
+    }).then(r => r.json());
+    data.ok ? showStatus("ok", data.mensaje, false)
+            : showStatus("error", data.error, false);
+}
+
+async function importarExcel(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("archivo", file);
+    const data = await fetch("/importar_excel", { method: "POST", body: form }).then(r => r.json());
+    if (data.ok) {
+        document.getElementById("panelGuardarExcel").style.display = "";
+        showStatus("ok", `Importación exitosa. ${data.actualizados} alumnos importados`, false);
+    } else {
+        showStatus("error", data.error, false);
+    }
+    input.value = "";
+}
+
+async function cargar(evaluacion) {
+    const data = await fetch("/cargar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evaluacion })
+    }).then(r => r.json());
+    if (data.error) { showStatus("error", data.error, false); return; }
+    setOcupado(true);
+    showStatus("info", `Cargando evaluación ${evaluacion}...`, true);
+    startPolling();
+}
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+setuptools
+selenium>=4.15.2
+pandas>=2.2.0
+openpyxl>=3.1.0
+flask>=3.0.0
